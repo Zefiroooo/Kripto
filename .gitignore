@@ -1,0 +1,10 @@
+# Dokumen panduan & konteks internal (tetap disimpan lokal, tidak di-track Git)
+MANUAL BOOK CAPSTONE 2026 \[FIX\].pdf
+Pertemuan 7 - Ketentuan Tugas Akhir Keamanan Data.pptx
+context_prototype_capstone_2026.md
+
+# Python & environment
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
