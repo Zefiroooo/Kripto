@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VaultXOR — Pengamanan Berkas Fernet + XOR Secret Sharing</title>
+  <link rel="stylesheet" href="/static/styles.css?v=2" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="container topbar-inner">
+      <div class="brand">
+        <div class="brand-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="11" width="18" height="10" rx="2" />
+            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+          </svg>
+        </div>
+        <div>
+          <h1>VaultXOR — Pengamanan Berkas Terdistribusi</h1>
+          <p class="subtitle">
+            Fernet Authenticated Encryption (AES-128-CBC + HMAC-SHA256) &bull; XOR Secret Sharing (<em>n</em>-dari-<em>n</em>)
+          </p>
+        </div>
+      </div>
+      <div class="meta-pills">
+        <span class="pill pill-teal">CAPSTONE 2026</span>
+        <span class="pill pill-slate">Kriptografi &amp; Keamanan Data</span>
+      </div>
+    </div>
+  </header>
+
+  <nav class="tabbar-wrap" aria-label="Navigasi Fitur Utama">
+    <div class="container">
+      <div class="tabbar" role="tablist">
+        <button class="tab-btn active" role="tab" aria-selected="true" data-tab="encrypt">
+          1. Amankan Berkas (Encrypt &amp; Split)
+        </button>
+        <button class="tab-btn" role="tab" aria-selected="false" data-tab="decrypt">
+          2. Pulihkan Berkas &amp; Uji Keamanan
+        </button>
+        <button class="tab-btn" role="tab" aria-selected="false" data-tab="benchmark">
+          3. Panel Evaluasi 10 Payload
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <main class="container main-content">
+    <!-- TAB 1: ENCRYPT & SPLIT -->
+    <section id="tab-encrypt" class="tab-panel active" role="tabpanel">
+      <div class="card">
+        <div class="card-head">
+          <h2>1. Amankan Berkas (Encrypt &amp; Split)</h2>
+          <p>
+            Unggah berkas dokumen maupun biner sembarang untuk dienkripsi dengan <strong>Fernet</strong> menjadi berkas
+            <code>.vault</code>, lalu kunci masternya (32 byte) dipecah menjadi <em>n</em> share independen melalui operasi bitwise <strong>XOR</strong>.
+          </p>
+        </div>
+
+        <div class="encrypt-form-grid">
+          <div class="form-col">
+            <label class="field-label" for="enc-file-input">Pilih Berkas yang Akan Diamankan</label>
+            <div id="enc-dropzone" class="dropzone" tabindex="0">
+              <input id="enc-file-input" type="file" hidden />
+              <div class="dropzone-icon" aria-hidden="true">&#128196;</div>
+              <div id="enc-file-label" class="dropzone-text">
+                Seret &amp; lepas berkas di sini, atau <strong>klik untuk memilih berkas</strong>
+              </div>
+              <div class="dropzone-hint">Mendukung format sembarang: .txt, .pdf, .docx, .zip, .sql, .bin, .png, dll.</div>
+            </div>
+          </div>
+
+          <div class="form-col">
+            <label class="field-label" for="enc-n-shares">Jumlah Share (<em>n</em>-dari-<em>n</em>)</label>
+            <div class="config-box">
+              <div>
+                <input id="enc-n-shares" class="input" type="number" min="2" max="6" value="3" />
+                <p class="helper-text">
+                  Seluruh <em>n</em> share wajib hadir untuk rekonstruksi kunci. Default proyek: <code>n = 3</code>.
+                </p>
+              </div>
+              <button id="enc-submit-btn" class="btn btn-primary btn-block" type="button">
+                Amankan Berkas &amp; Pecah Kunci
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div id="enc-error" class="alert alert-danger hidden" role="alert"></div>
+      </div>
+
+      <div id="enc-results" class="hidden">
+        <div class="alert alert-success status-flex">
+          <div id="enc-success-msg"></div>
+          <button id="btn-goto-decrypt" class="btn btn-outline-success" type="button">
+            Uji Pemulihan &amp; Keamanan &rarr;
+          </button>
+        </div>
+
+        <div class="kpi-grid kpi-4">
+          <div class="kpi-card">
+            <span class="kpi-label">Ukuran Asli</span>
+            <strong id="kpi-orig-size" class="kpi-value">-</strong>
+            <span id="kpi-orig-bytes" class="kpi-sub">-</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Ukuran Terenkripsi (.vault)</span>
+            <strong id="kpi-vault-size" class="kpi-value">-</strong>
+            <span id="kpi-vault-bytes" class="kpi-sub">-</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Ekspansi Ukuran</span>
+            <strong id="kpi-expansion" class="kpi-value">-</strong>
+            <span class="kpi-sub">Overhead Fernet + Base64</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Waktu Proses</span>
+            <strong id="kpi-enc-time" class="kpi-value">-</strong>
+            <span id="kpi-enc-sub" class="kpi-sub">-</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="hash-header">
+            <span class="field-label">Hash SHA-256 Berkas Asli (Acuan Verifikasi Integritas)</span>
+            <button class="btn btn-sm btn-secondary copy-btn" data-copy-target="enc-sha256" type="button">Salin SHA-256</button>
+          </div>
+          <pre id="enc-sha256" class="code-block">-</pre>
+
+          <h3 class="section-subtitle">Perbandingan Isi Sebelum vs Sesudah Pengamanan</h3>
+          <div class="compare-grid">
+            <div class="compare-box">
+              <div class="compare-title">Sebelum &mdash; <span id="enc-orig-preview-kind">Asli</span></div>
+              <pre id="enc-orig-preview" class="code-block code-scroll">-</pre>
+            </div>
+            <div class="compare-box">
+              <div class="compare-title">
+                Sesudah &mdash; Token Fernet <code>.vault</code>
+                <span id="enc-ct-entropy-badge" class="badge badge-teal">Entropi: -</span>
+              </div>
+              <pre id="enc-vault-preview" class="code-block code-scroll">-</pre>
+            </div>
+          </div>
+
+          <div class="action-row">
+            <a id="enc-download-vault" class="btn btn-primary btn-block" href="#" download>
+              Unduh Berkas Terenkripsi (.vault)
+            </a>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="hash-header">
+            <div>
+              <h3 class="section-subtitle no-margin">Distribusi Share Kunci (32 Byte per Share)</h3>
+              <p id="enc-corr-info" class="helper-text">Korelasi antar share: -</p>
+            </div>
+          </div>
+          <div id="enc-shares-grid" class="shares-grid"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: COMBINE & DECRYPT -->
+    <section id="tab-decrypt" class="tab-panel" role="tabpanel">
+      <div class="card">
+        <div class="card-head">
+          <h2>2. Pulihkan Berkas &amp; Simulasi Uji Keamanan (Combine &amp; Decrypt)</h2>
+          <p>
+            Unggah berkas <code>.vault</code> dan gabungkan share kunci untuk memulihkan berkas asli.
+            Anda juga dapat mensimulasikan serangan <strong><em>n</em>&minus;1 share</strong> atau <strong>modifikasi 1 bit pada <code>.vault</code></strong>
+            untuk membuktikan verifikasi <em>Verify-before-Decrypt</em> HMAC-SHA256.
+          </p>
+        </div>
+
+        <div id="dec-session-banner" class="session-box hidden">
+          <label class="checkbox-row">
+            <input id="dec-use-session-vault" type="checkbox" checked />
+            <span>Gunakan berkas <code>.vault</code> dari sesi Enkripsi terakhir: <strong id="dec-session-vault-name">-</strong></span>
+          </label>
+        </div>
+
+        <div id="dec-manual-vault-wrap">
+          <label class="field-label" for="dec-vault-input">Unggah Berkas Terenkripsi (.vault)</label>
+          <div id="dec-vault-dropzone" class="dropzone dropzone-compact" tabindex="0">
+            <input id="dec-vault-input" type="file" hidden />
+            <div id="dec-vault-label" class="dropzone-text">
+              Seret berkas <code>.vault</code> ke sini, atau <strong>klik untuk memilih</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <label class="field-label">Sumber Share Kunci</label>
+        <div class="mode-pills" role="group" aria-label="Sumber Share Kunci">
+          <button id="mode-btn-session" class="mode-pill hidden" data-mode="session" type="button">
+            Sesi Demo Cepat (Pilih Share)
+          </button>
+          <button id="mode-btn-files" class="mode-pill active" data-mode="files" type="button">
+            Unggah Berkas .key
+          </button>
+          <button id="mode-btn-hex" class="mode-pill" data-mode="hex" type="button">
+            Tempel Teks Hex
+          </button>
+        </div>
+
+        <!-- Share Mode: Session Checkboxes -->
+        <div id="share-panel-session" class="share-panel hidden">
+          <p class="helper-text">Centang share yang disertakan (hapus centang 1 share untuk simulasi serangan <em>n</em>&minus;1):</p>
+          <div id="dec-session-share-checks" class="check-grid"></div>
+          <div id="dec-nminus1-hint" class="alert alert-warning hidden"></div>
+        </div>
+
+        <!-- Share Mode: Upload .key files -->
+        <div id="share-panel-files" class="share-panel">
+          <div id="dec-keys-dropzone" class="dropzone dropzone-compact" tabindex="0">
+            <input id="dec-keys-input" type="file" multiple hidden />
+            <div id="dec-keys-label" class="dropzone-text">
+              Pilih beberapa berkas <code>share_*.key</code> sekaligus (mis. 3 file untuk pulih, atau 2 file untuk uji <em>n</em>&minus;1)
+            </div>
+          </div>
+          <div id="dec-keys-chips" class="chip-list"></div>
+        </div>
+
+        <!-- Share Mode: Hex inputs -->
+        <div id="share-panel-hex" class="share-panel hidden">
+          <div id="dec-hex-rows" class="hex-rows"></div>
+          <button id="btn-add-hex-row" class="btn btn-sm btn-secondary" type="button">+ Tambah Baris Share Hex</button>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="tamper-box">
+          <label class="checkbox-row tamper-label">
+            <input id="dec-simulate-tamper" type="checkbox" />
+            <span>
+              <strong>Simulasikan Modifikasi 1 Bit pada Berkas <code>.vault</code></strong>
+              <span class="tamper-desc">(Uji anti-tampering: membalik 1 bit ciphertext sebelum dekripsi untuk membuktikan HMAC menolak berkas rusak)</span>
+            </span>
+          </label>
+        </div>
+
+        <details class="ref-details">
+          <summary>Opsi Verifikasi Silang Referensi (SHA-256 &amp; BER)</summary>
+          <div class="ref-grid">
+            <div>
+              <label class="field-label" for="dec-expected-sha">SHA-256 Referensi Asli (Opsional)</label>
+              <input id="dec-expected-sha" class="input mono" type="text" placeholder="Otomatis terisi jika berasal dari Tab 1..." />
+            </div>
+            <div>
+              <label class="field-label" for="dec-ref-file">Atau Unggah Berkas Asli Pembanding untuk Hitung BER (Opsional)</label>
+              <input id="dec-ref-file" class="input" type="file" />
+            </div>
+          </div>
+        </details>
+
+        <button id="dec-submit-btn" class="btn btn-primary btn-block" type="button">
+          Gabungkan Share &amp; Dekripsi Berkas
+        </button>
+
+        <div id="dec-error" class="alert alert-danger hidden" role="alert"></div>
+      </div>
+
+      <div id="dec-result-ok" class="hidden">
+        <div class="alert alert-success">
+          <strong>PEMULIHAN BERHASIL</strong> &mdash; Seluruh share valid dan segel integritas HMAC-SHA256 terverifikasi.
+        </div>
+
+        <div class="kpi-grid kpi-4">
+          <div class="kpi-card">
+            <span class="kpi-label">SHA-256 Hash Match</span>
+            <strong id="dec-kpi-hash" class="kpi-value">-</strong>
+            <span class="kpi-sub">Integritas SHA-256</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Bit Error Rate (BER)</span>
+            <strong id="dec-kpi-ber" class="kpi-value">-</strong>
+            <span class="kpi-sub">Jarak Hamming Bit</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Waktu XOR Combine</span>
+            <strong id="dec-kpi-comb" class="kpi-value">-</strong>
+            <span class="kpi-sub">Rekonstruksi Kunci</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Waktu Fernet Decrypt</span>
+            <strong id="dec-kpi-dec" class="kpi-value">-</strong>
+            <span class="kpi-sub">Verify &amp; Decrypt</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="hash-header">
+            <span class="field-label">Hash SHA-256 Berkas Hasil Pemulihan</span>
+            <button class="btn btn-sm btn-secondary copy-btn" data-copy-target="dec-sha256" type="button">Salin SHA-256</button>
+          </div>
+          <pre id="dec-sha256" class="code-block">-</pre>
+
+          <h3 class="section-subtitle">Pratinjau Hasil Pemulihan (<span id="dec-preview-kind">-</span>)</h3>
+          <pre id="dec-preview-text" class="code-block code-scroll">-</pre>
+
+          <div class="action-row">
+            <a id="dec-download-recovered" class="btn btn-primary btn-block" href="#" download>
+              Unduh Berkas Hasil Pemulihan
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <div id="dec-result-rejected" class="hidden">
+        <div class="security-reject-card" role="alert">
+          <div class="reject-badge">SECURITY ALERT &bull; INVALIDTOKEN</div>
+          <h3>AKSES DITOLAK &mdash; Verifikasi Integritas HMAC Gagal</h3>
+          <p id="dec-reject-msg"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: BENCHMARK 10 PAYLOAD -->
+    <section id="tab-benchmark" class="tab-panel" role="tabpanel">
+      <div class="card">
+        <div class="card-head">
+          <h2>3. Panel Evaluasi &amp; Benchmark Otomatis 10 Payload</h2>
+          <p>
+            Pengujian otomatis pada <strong>10 ukuran payload berbeda</strong>
+            (<code>1 KB</code>, <code>10 KB</code>, <code>100 KB</code>, <code>500 KB</code>, <code>1 MB</code>, <code>5 MB</code>, <code>10 MB</code>, <code>20 MB</code>, <code>35 MB</code>, <code>50 MB</code>)
+            untuk mengukur integritas, penolakan <em>n</em>&minus;1, entropi, korelasi, ekspansi ukuran, dan waktu pemrosesan.
+          </p>
+        </div>
+
+        <div class="bench-controls">
+          <div class="bench-mode-group">
+            <label class="radio-inline">
+              <input type="radio" name="bench-mode" value="full" checked />
+              <span>Penuh (10 Payload: 1 KB &ndash; 50 MB)</span>
+            </label>
+            <label class="radio-inline">
+              <input type="radio" name="bench-mode" value="quick" />
+              <span>Mode Demo Kilat (6 Payload: 1 KB &ndash; 5 MB)</span>
+            </label>
+          </div>
+          <div class="bench-buttons">
+            <button id="bench-run-btn" class="btn btn-primary" type="button">
+              Jalankan Benchmark Otomatis
+            </button>
+            <a id="bench-csv-btn" class="btn btn-secondary hidden" href="/api/benchmark/csv" download>
+              Ekspor Tabel (.csv)
+            </a>
+          </div>
+        </div>
+
+        <div id="bench-progress-wrap" class="progress-wrap hidden">
+          <div class="progress-head">
+            <span id="bench-progress-text">Mempersiapkan pengujian...</span>
+            <span id="bench-progress-pct">0%</span>
+          </div>
+          <div class="progress-track">
+            <div id="bench-progress-fill" class="progress-fill" style="width: 0%"></div>
+          </div>
+        </div>
+
+        <div id="bench-source-note" class="alert alert-info hidden"></div>
+      </div>
+
+      <div id="bench-results" class="hidden">
+        <div class="kpi-grid kpi-5">
+          <div class="kpi-card">
+            <span class="kpi-label">Hash Match</span>
+            <strong id="bkpi-hash" class="kpi-value">-</strong>
+            <span class="kpi-sub">100% Identik</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">BER Maksimum</span>
+            <strong id="bkpi-ber" class="kpi-value">-</strong>
+            <span class="kpi-sub">Zero Bit Error</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Uji <em>n</em>&minus;1 Blocked</span>
+            <strong id="bkpi-blocked" class="kpi-value">-</strong>
+            <span class="kpi-sub">HMAC InvalidToken</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Entropi Ciphertext</span>
+            <strong id="bkpi-entropy" class="kpi-value">-</strong>
+            <span class="kpi-sub">bit/byte (ideal 8.0)</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Maks XOR Split/Comb</span>
+            <strong id="bkpi-xor" class="kpi-value">-</strong>
+            <span class="kpi-sub">Konstan &lt; 1 ms</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 class="section-subtitle">Tabel Hasil Evaluasi 10 Payload</h3>
+          <div class="table-wrap">
+            <table id="bench-table" class="data-table">
+              <thead></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 class="section-subtitle">Visualisasi Grafik Evaluasi (Klik Grafik untuk Perbesar)</h3>
+          <div class="charts-grid">
+            <figure class="chart-card">
+              <img id="chart-timing" src="" alt="Grafik Waktu Proses per Tahap" />
+              <figcaption>Waktu Proses per Tahap (Fernet vs XOR)</figcaption>
+            </figure>
+            <figure class="chart-card">
+              <img id="chart-entropy" src="" alt="Grafik Entropi Ciphertext dan Bit Share" />
+              <figcaption>Entropi Ciphertext &amp; Entropi Bit Share</figcaption>
+            </figure>
+            <figure class="chart-card">
+              <img id="chart-correlation" src="" alt="Grafik Korelasi Pearson Antar Share" />
+              <figcaption>Independensi Share (Korelasi Pearson)</figcaption>
+            </figure>
+            <figure class="chart-card">
+              <img id="chart-expansion" src="" alt="Grafik Ekspansi Ukuran Berkas" />
+              <figcaption>Ekspansi Ukuran Berkas (.vault)</figcaption>
+            </figure>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-inner">
+      <span>Ketua Tim: Muhammad Al Bukhari (NIM. 240535610175) &bull; DTEI FT Universitas Negeri Malang</span>
+      <span>VaultXOR Prototype &bull; CAPSTONE 2026</span>
+    </div>
+  </footer>
+
+  <!-- Lightbox Modal for Charts -->
+  <div id="chart-modal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Pratinjau Grafik Diperbesar">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <button id="modal-close-btn" class="modal-close" type="button" aria-label="Tutup">&times;</button>
+      <img id="modal-img" src="" alt="Grafik Diperbesar" />
+      <p id="modal-caption" class="modal-caption"></p>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden" role="status"></div>
+
+  <script src="/static/app.js?v=2"></script>
+</body>
+</html>
